@@ -207,6 +207,165 @@ final class ClientTest extends TestCase
         $this->assertArrayNotHasKey('description', $req['body']);
     }
 
+    // ── captureTransaction ─────────────────────────────────────────────────
+
+    public function testCaptureTransactionSendsCorrectPost(): void
+    {
+        $client = $this->createClient();
+        $client->mockResponse(200, [
+            'id' => 'txn-456',
+            'amount' => 1295,
+            'currency' => 'EUR',
+            'status' => 'captured',
+            'payment_method' => 'credit-card',
+            'created' => '2026-01-01T00:00:00+00:00',
+            'modified' => '2026-01-01T00:01:00+00:00',
+        ]);
+
+        $result = $client->captureTransaction('order-123', 'txn-456');
+
+        $req = $client->getLastRequest();
+        $this->assertSame('POST', $req['method']);
+        $this->assertSame('/v1/orders/order-123/transactions/txn-456/captures/', $req['endpoint']);
+        $this->assertNull($req['body']);
+        $this->assertSame('txn-456', $result['id']);
+        $this->assertSame('captured', $result['status']);
+    }
+
+    // ── voidTransaction ──────────────────────────────────────────────────────
+
+    public function testVoidTransactionSendsCorrectPost(): void
+    {
+        $client = $this->createClient();
+        $client->mockResponse(200, [
+            'id' => 'txn-456',
+            'amount' => 500,
+            'currency' => 'EUR',
+            'status' => 'voided',
+            'created' => '2026-01-01T00:00:00+00:00',
+            'modified' => '2026-01-01T00:01:00+00:00',
+        ]);
+
+        $result = $client->voidTransaction('order-123', 'txn-456', 500, 'Customer cancelled');
+
+        $req = $client->getLastRequest();
+        $this->assertSame('POST', $req['method']);
+        $this->assertSame('/v1/orders/order-123/transactions/txn-456/voids/amount/', $req['endpoint']);
+        $this->assertSame(500, $req['body']['amount']);
+        $this->assertSame('Customer cancelled', $req['body']['description']);
+        $this->assertSame('txn-456', $result['id']);
+        $this->assertSame('voided', $result['status']);
+    }
+
+    public function testVoidTransactionWithoutDescription(): void
+    {
+        $client = $this->createClient();
+        $client->mockResponse(200, [
+            'id' => 'txn-456',
+            'amount' => 1295,
+            'currency' => 'EUR',
+            'status' => 'voided',
+            'created' => '2026-01-01T00:00:00+00:00',
+            'modified' => '2026-01-01T00:01:00+00:00',
+        ]);
+
+        $client->voidTransaction('order-123', 'txn-456', 1295);
+
+        $req = $client->getLastRequest();
+        $this->assertArrayNotHasKey('description', $req['body']);
+    }
+
+    // ── createOrder with order_lines ─────────────────────────────────────────
+
+    public function testCreateOrderWithOrderLines(): void
+    {
+        $client = $this->createClient();
+        $client->mockResponse(201, $this->sampleOrderResponse());
+
+        $orderLines = [
+            [
+                'name' => 'Widget',
+                'quantity' => 2,
+                'unit_price' => 500,
+                'total_amount' => 1000,
+            ],
+            [
+                'name' => 'Shipping',
+                'quantity' => 1,
+                'unit_price' => 295,
+                'total_amount' => 295,
+            ],
+        ];
+
+        $client->createOrder([
+            'amount' => 1295,
+            'currency' => 'EUR',
+            'order_lines' => $orderLines,
+        ]);
+
+        $req = $client->getLastRequest();
+        $this->assertSame('POST', $req['method']);
+        $this->assertSame('/v1/orders/', $req['endpoint']);
+        $this->assertSame(1295, $req['body']['amount']);
+        $this->assertSame('EUR', $req['body']['currency']);
+        $this->assertCount(2, $req['body']['order_lines']);
+        $this->assertSame('Widget', $req['body']['order_lines'][0]['name']);
+        $this->assertSame(295, $req['body']['order_lines'][1]['total_amount']);
+    }
+
+    // ── createOrder with transactions ────────────────────────────────────────
+
+    public function testCreateOrderWithTransactions(): void
+    {
+        $client = $this->createClient();
+        $client->mockResponse(201, $this->sampleOrderResponse());
+
+        $transactions = [
+            [
+                'payment_method' => 'credit-card',
+                'capture_mode' => 'manual',
+                'expiration_period' => 'PT30M',
+            ],
+        ];
+
+        $client->createOrder([
+            'amount' => 1295,
+            'currency' => 'EUR',
+            'transactions' => $transactions,
+        ]);
+
+        $req = $client->getLastRequest();
+        $this->assertSame('POST', $req['method']);
+        $this->assertSame('/v1/orders/', $req['endpoint']);
+        $this->assertCount(1, $req['body']['transactions']);
+        $this->assertSame('credit-card', $req['body']['transactions'][0]['payment_method']);
+        $this->assertSame('manual', $req['body']['transactions'][0]['capture_mode']);
+        $this->assertSame('PT30M', $req['body']['transactions'][0]['expiration_period']);
+    }
+
+    public function testCreateOrderWithCustomer(): void
+    {
+        $client = $this->createClient();
+        $client->mockResponse(201, $this->sampleOrderResponse());
+
+        $customer = [
+            'first_name' => 'John',
+            'last_name' => 'Doe',
+            'email' => 'john@example.com',
+        ];
+
+        $client->createOrder([
+            'amount' => 1295,
+            'currency' => 'EUR',
+            'customer' => $customer,
+        ]);
+
+        $req = $client->getLastRequest();
+        $this->assertSame('John', $req['body']['customer']['first_name']);
+        $this->assertSame('Doe', $req['body']['customer']['last_name']);
+        $this->assertSame('john@example.com', $req['body']['customer']['email']);
+    }
+
     // ── generatePaymentUrl ───────────────────────────────────────────────────
 
     public function testGeneratePaymentUrlReturnsUrlAndSignature(): void

@@ -54,6 +54,9 @@ class NoPaynClient
      *     locale?: string,
      *     paymentMethods?: string[],
      *     expirationPeriod?: string,
+     *     order_lines?: array<int, array<string, mixed>>,
+     *     customer?: array<string, mixed>,
+     *     transactions?: array<int, array<string, mixed>>,
      * } $params
      * @return array<string, mixed>
      */
@@ -73,6 +76,38 @@ class NoPaynClient
     {
         $data = $this->request('GET', '/v1/orders/' . rawurlencode($orderId) . '/');
         return self::mapOrder($data);
+    }
+
+    /**
+     * Capture an authorized transaction via POST /v1/orders/{orderId}/transactions/{transactionId}/captures/.
+     *
+     * @return array<string, mixed>
+     */
+    public function captureTransaction(string $orderId, string $transactionId): array
+    {
+        return $this->request(
+            'POST',
+            '/v1/orders/' . rawurlencode($orderId) . '/transactions/' . rawurlencode($transactionId) . '/captures/',
+        );
+    }
+
+    /**
+     * Void (partially or fully) an authorized transaction via POST /v1/orders/{orderId}/transactions/{transactionId}/voids/amount/.
+     *
+     * @return array<string, mixed>
+     */
+    public function voidTransaction(string $orderId, string $transactionId, int $amount, string $description = ''): array
+    {
+        $body = ['amount' => $amount];
+        if ($description !== '') {
+            $body['description'] = $description;
+        }
+
+        return $this->request(
+            'POST',
+            '/v1/orders/' . rawurlencode($orderId) . '/transactions/' . rawurlencode($transactionId) . '/voids/amount/',
+            $body,
+        );
     }
 
     /**
@@ -121,6 +156,9 @@ class NoPaynClient
      *     locale?: string,
      *     paymentMethods?: string[],
      *     expirationPeriod?: string,
+     *     order_lines?: array<int, array<string, mixed>>,
+     *     customer?: array<string, mixed>,
+     *     transactions?: array<int, array<string, mixed>>,
      * } $params
      * @return array{orderId: string, orderUrl: string, paymentUrl: ?string, signature: string, order: array<string, mixed>}
      */
@@ -358,6 +396,14 @@ class NoPaynClient
         foreach ($map as $camelKey => $snakeKey) {
             if (array_key_exists($camelKey, $params)) {
                 $body[$snakeKey] = $params[$camelKey];
+            }
+        }
+
+        // Pass-through fields (already snake_case)
+        $passthrough = ['order_lines', 'customer', 'transactions'];
+        foreach ($passthrough as $key) {
+            if (array_key_exists($key, $params)) {
+                $body[$key] = $params[$key];
             }
         }
 
